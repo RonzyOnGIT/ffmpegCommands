@@ -120,10 +120,9 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
     // create dynamic array
 
-    // execvp("ffprobe", args);
-
     // first store original name of the file, then change the original file name to inputfile.mkv, then use command, then change output filename to original, then delete the original file
 
+    // int changeCount = 0;
 
     while ((entry = readdir(dir)) != NULL) {
 
@@ -225,31 +224,46 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
                 printf("\n");
 
-                // pid_t pid = fork();
+                pid_t pid = fork();
 
-                // if (pid == 0) {
-                //     execvp("ffmpeg", mm);
-                //     perror("execvp failed");
-                // } else if (pid > 0) {
+                if (pid == 0) {
+                    execvp("ffmpeg", mm);
+                    perror("execvp failed");
+                } else if (pid > 0) {
 
-                //     int status;
-                //     waitpid(pid, &status, 0);
-                //         if (WIFEXITED(status)) {
-                //             int exit_code = WEXITSTATUS(status);
-                //             if (exit_code == 0) {
-                //                 printf("successfully changed to japanese default!\n");
-                //                 changeCount++;
-                //                 // delete old english default clip and rename output to original
-                //             } else {
-                //                 printf("some error happened\n");
-                //             }
-                //             printf("Child exited with code %d\n", WEXITSTATUS(status));
-                //         } else {
-                //             printf("Child terminated abnormally\n");
-                //         }
-                // } else {
-                //     perror("fork failed\n");
-                // }
+                    int status;
+                    waitpid(pid, &status, 0);
+                    if (WIFEXITED(status)) {
+                        int exit_code = WEXITSTATUS(status);
+                        if (exit_code == 0) {
+                            printf("successfully changed to japanese default!\n");
+                            // changeCount++;
+                            // delete old english default clip and rename output to original
+
+                            int del_res = remove(original_file_name);
+
+                            if (del_res != 0) {
+                                printf("failed to delete file\n");
+                            }
+
+                            fileRenameResult = rename(destination, original_file_name);
+
+                            // printf("original_file_name: %s\n", original_file_name);
+                            // printf("destination: %s\n", destination);
+
+                            // first delete the old english file
+
+                            // rename the new destination one to original file
+                        } else {
+                            printf("some error happened\n");
+                        }
+                        printf("Child exited with code %d\n", WEXITSTATUS(status));
+                    } else {
+                        printf("Child terminated abnormally\n");
+                    }
+                } else {
+                    perror("fork failed\n");
+                }
 
 
                 for (int i = 0; i < commandCount; i++) {
@@ -311,7 +325,8 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
     // first we need to tokenize this shit so use strtoken??
     int count = get_word_count(command);
 
-    int fullCommandWordCount = count + 2;
+    // plus 2 for input_file_name and output_file and plus extra one for NULL argument
+    int fullCommandWordCount = count + 3;
     char **new_command = malloc(fullCommandWordCount * sizeof(char *));
 
     char *tok = strtok(command, " ");
@@ -332,8 +347,10 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
     // after creating array of arguments, append the output file and input file
     new_command[2] = malloc(strlen(input_file_name) + 1);
     strcpy(new_command[2], input_file_name);
-    new_command[fullCommandWordCount - 1] = malloc(strlen(output_file) + 1);
-    strcpy(new_command[fullCommandWordCount - 1], output_file);
+    new_command[fullCommandWordCount - 2] = malloc(strlen(output_file) + 1);
+    strcpy(new_command[fullCommandWordCount - 2], output_file);
+    new_command[fullCommandWordCount - 1] = NULL;
+
 
     // for (int i = 0; i < fullCommandWordCount; i++) {
     //     printf("%s ", new_command[i]);
