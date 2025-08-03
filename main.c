@@ -7,9 +7,11 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
-#define MAX_DICT_LEN 140
+#define MAX_DICT_LEN 150
 
 int change_audio_to_japanese(DIR *, char *);
+
+int amplify_audio(DIR *, char *);
 
 void destroyFfprobeArgs(char **);
 
@@ -22,9 +24,7 @@ int get_word_count(char *);
 
 int main(void) {
 
-
     // to be able to dynamically make an array of strings, have to allocate on the heap
-
 
     // first get the name of the directory to get access to all files to be able to apply changes to all files
     char dictName[MAX_DICT_LEN];
@@ -53,58 +53,43 @@ int main(void) {
     // entry in directory
     // struct dirent *entry;
 
-    // while ((entry = readdir(dirp)) != NULL) {
-    //     printf("%s\n", entry->d_name);
-    // }
-
     int response = -1;
 
-    printf("change audio 1: ");
-    scanf("%d", &response);
 
-    int res = change_audio_to_japanese(dirp, finalPath);
+    while (response != 0) {
 
+        printf("1: change audio to japanese\n");
+        printf("2: make audio louder\n");
+        printf("0: quit\n");
 
-    // while (response != 0) {
+        scanf("%d", &response);
 
-    //     printf("1: change audio to japanese\n");
-    //     printf("2: make audio louder\n");
+        if (response == 1) {
+            // change audio to jpn
+            int res = change_audio_to_japanese(dirp, finalPath);
+        } else if (response == 2) {
+            int res = amplify_audio(dirp, finalPath);
+            // make audio louder
+        } else if (response == 0) {
+            printf("exiting application\n");
+            free(finalPath);
+            closedir(dirp);
+            return 0;
+        } else {
+            printf("not a valid input, try again\n");
+        }
 
-    //     scanf("%d", &response);
+        printf("response: %d\n", response);
 
-    //     if (response == 1) {
-    //         // change audio to jpn
-    //         // before I try to run the command, check first that its not already defaulted to japanese
-    //         // change_audio_to_japanese()
-    //         int res = change_audio_to_japanese(dirp);
-    //     } else if (response == 2) {
-    //         // make audio louder
-    //         printf("ni");
-    //     } else {
-    //         printf("not a valid input\n");
-    //     }
-
-
-    //     printf("response: %d\n", response);
-
-    // }
+    }
 
     free(finalPath);
     closedir(dirp);
-
-    // I guess use fork() to create child process, which the child will be running execvp() then capture it from the parent
-
-    //  To do this, first need to use fork(), then pipe() to capture the output of the child process
-
-
-
-    //    char *args[] = {"ffmpeg", "-i", "input.mp4", "-filter:a", "volume=2.0", "output.mp4", NULL};
-
     
-
     return 0;
 }
 
+// prefixPath is the '../../'
 // check if jp by checking index 1 TAG: language == eng
 int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
@@ -114,33 +99,25 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         return - 1;
     }
 
-    // first gotta fork()
-
     struct dirent *entry;
-
-    // create dynamic array
 
     // first store original name of the file, then change the original file name to inputfile.mkv, then use command, then change output filename to original, then delete the original file
 
-    // int changeCount = 0;
-
     while ((entry = readdir(dir)) != NULL) {
-
-        char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
-        strcpy(destination, prefixPath);
-        strcat(destination, "/");
+    
 
         // Skip "." and ".." entries
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            free(destination);
             continue;
         }
 
         if (strcmp(entry->d_name, "subs") == 0 || strcmp(entry->d_name, "Subs") == 0 || strcmp(entry->d_name, "SUBS") == 0) {
-            free(destination);
             continue;
         }
 
+        char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
+        strcpy(destination, prefixPath);
+        strcat(destination, "/");
 
         // store the arguments to perform probe command
         // char **probeArgs = NULL;
@@ -212,75 +189,70 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         // only performs audio track change, if default audio is not japanese
         if (!is_default_jpn) {
             if (strcmp(fileExtension, "mkv") == 0) {
+
                 strcat(destination, "outputfile.mkv");
-                printf("%s IS NOT japanese by default\n", original_file_name);
-                char command[200] = "ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ";
-                char **mm = construct_ffmpeg_command(command, original_file_name, destination);
-                int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
-
-                for (int i = 0; i < commandCount; i++) {
-                    printf("%s ", mm[i]);
-                }
-
-                printf("\n");
-
-                pid_t pid = fork();
-
-                if (pid == 0) {
-                    execvp("ffmpeg", mm);
-                    perror("execvp failed");
-                } else if (pid > 0) {
-
-                    int status;
-                    waitpid(pid, &status, 0);
-                    if (WIFEXITED(status)) {
-                        int exit_code = WEXITSTATUS(status);
-                        if (exit_code == 0) {
-                            printf("successfully changed to japanese default!\n");
-                            // changeCount++;
-                            // delete old english default clip and rename output to original
-
-                            int del_res = remove(original_file_name);
-
-                            if (del_res != 0) {
-                                printf("failed to delete file\n");
-                            }
-
-                            fileRenameResult = rename(destination, original_file_name);
-
-                            // printf("original_file_name: %s\n", original_file_name);
-                            // printf("destination: %s\n", destination);
-
-                            // first delete the old english file
-
-                            // rename the new destination one to original file
-                        } else {
-                            printf("some error happened\n");
-                        }
-                        printf("Child exited with code %d\n", WEXITSTATUS(status));
-                    } else {
-                        printf("Child terminated abnormally\n");
-                    }
-                } else {
-                    perror("fork failed\n");
-                }
-
-
-                for (int i = 0; i < commandCount; i++) {
-                    free(mm[i]);
-                }
-
-                free(mm);
                 
-                // fileRenameResult = rename(original_file_name, destination);
             } else if (strcmp(fileExtension, "mp4") == 0) {
+
                 strcat(destination, "outputfile.mp4");
 
-                // fileRenameResult = rename(original_file_name, destination);
             } else {
+
                 strcat(destination, "outputfile.mov");
-                // fileRenameResult = rename(original_file_name, destination);
+            
             }
+
+            printf("%s IS NOT japanese by default\n", original_file_name);
+
+            char command[200] = "ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ";
+            char **mm = construct_ffmpeg_command(command, original_file_name, destination);
+            int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
+
+            for (int i = 0; i < commandCount; i++) {
+                printf("%s ", mm[i]);
+            }
+
+            printf("\n");
+
+            pid_t pid = fork();
+
+            if (pid == 0) {
+                execvp("ffmpeg", mm);
+                perror("execvp failed");
+            } else if (pid > 0) {
+
+                int status;
+                waitpid(pid, &status, 0);
+                if (WIFEXITED(status)) {
+                    int exit_code = WEXITSTATUS(status);
+                    if (exit_code == 0) {
+                        printf("successfully changed to japanese default!\n");
+                        // delete old english default clip and rename output to original
+
+                        int del_res = remove(original_file_name);
+
+                        if (del_res != 0) {
+                            printf("failed to delete file\n");
+                        }
+
+                        fileRenameResult = rename(destination, original_file_name);
+
+                    } else {
+                        printf("some error happened\n");
+                    }
+                    printf("Child exited with code %d\n", WEXITSTATUS(status));
+                } else {
+                    printf("Child terminated abnormally\n");
+                }
+            } else {
+                perror("fork failed\n");
+            }
+
+            for (int i = 0; i < commandCount; i++) {
+                free(mm[i]);
+            }
+
+            free(mm);
 
             if (fileRenameResult == -1) {
                 printf("failed to rename file\n");
@@ -299,10 +271,127 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
     return 1;
 
-    // first check to see if not already in japanese, if so then move on
+}
 
-    //    execvp("ffmpeg", args);
+int amplify_audio(DIR *dir, char *prefixPath) {
+    // command -> ffmpeg -i input.mp4 -filter:a "volume=1.5" -c:v copy output.mp4
 
+    if (dir == NULL) {
+        perror("opendir");
+        return - 1;
+    }
+
+    float amplify_value = 0;
+
+    // value over 1 to amplify or less to decrease volume
+    printf("how much to amplify: ");
+    scanf("%f", &amplify_value);
+
+    struct dirent *entry; // this is one file from the directory
+
+    while ((entry = readdir(dir)) != NULL) {
+
+        // Skip "." and ".." entries
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        if (strcmp(entry->d_name, "subs") == 0 || strcmp(entry->d_name, "Subs") == 0 || strcmp(entry->d_name, "SUBS") == 0) {
+            continue;
+        }
+
+        //                                                      plus 2 for '/' and '\0'
+        char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
+        strcpy(destination, prefixPath);
+        strcat(destination, "/");
+
+
+        char *original_file_name = malloc(strlen(entry->d_name) + strlen(prefixPath) + 2);
+        strcpy(original_file_name, prefixPath);
+        strcat(original_file_name, "/");
+        strcat(original_file_name, entry->d_name);
+
+        int len = strlen(original_file_name);
+        char *file_extension = original_file_name + len - 3;
+
+        if (strcmp(file_extension, "mkv") == 0) {
+            strcat(destination, "outputfile.mkv");
+        } else if (strcmp(file_extension, "mp4") == 0) {
+            strcat(destination, "outputfile.mp4");
+        } else if (strcmp(file_extension, "mov") == 0) {
+            strcat(destination, "outputfile.mov");
+        }
+
+        char command[200] = "ffmpeg -i -filter:a volume=1.5 -c:v copy ";
+
+        // this is the acutal command thats gonna get executed
+        char **amp_command = construct_ffmpeg_command(command, original_file_name, destination);
+        
+        int commandCount = get_word_count("ffmpeg -i -filter:a volume=1.5 -c:v copy ") + 2;
+        
+        for (int i = 0; i < commandCount; i++) {
+            printf("%s ", amp_command[i]);
+        }
+
+        pid_t pid = fork();
+
+        if (pid == 0) {
+            execvp("ffmpeg", amp_command);
+            perror("execvp failed");
+        } else if (pid > 0) {
+
+            int status;
+
+            waitpid(pid, &status, 0);
+
+            if (WIFEXITED(status)) {
+                int exit_code = WEXITSTATUS(status);
+                if (exit_code == 0) {
+                    printf("successfully amplified audio!\n");
+                    // delete old english default clip and rename output to original
+
+                    int del_res = remove(original_file_name);
+
+                    if (del_res != 0) {
+                        printf("failed to delete file\n");
+                    }
+
+                    int fileRenameResult = rename(destination, original_file_name);
+
+                    // printf("original_file_name: %s\n", original_file_name);
+                    // printf("destination: %s\n", destination);
+                    if (fileRenameResult < 0) {
+                        printf("file rename failed\n");
+                        return -1;
+                    }
+
+                } else {
+                    printf("some error happened\n");
+                    return -1;
+                }
+                printf("Child exited with code %d\n", WEXITSTATUS(status));
+            } else {
+                printf("Child terminated abnormally\n");
+                return -1;
+            }
+        } else {
+            perror("fork failed\n");
+        }
+
+        for (int i = 0; i < commandCount; i++) {
+            free(amp_command[i]);
+        }
+
+        free(amp_command);
+
+        free(destination);
+        free(original_file_name);
+
+        printf("\n");
+
+    }
+
+    return 1;
 
 }
 
@@ -321,8 +410,7 @@ void destroyFfprobeArgs(char **args) {
 // have to tokenize the char *command input to be able to get individual arguments
 // returns an array of strings from one single string, command, with the input file name
 char ** construct_ffmpeg_command(char command[], char *input_file_name, char *output_file) {
-    // char **command = malloc()
-    // first we need to tokenize this shit so use strtoken??
+    
     int count = get_word_count(command);
 
     // plus 2 for input_file_name and output_file and plus extra one for NULL argument
@@ -356,8 +444,6 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
     //     printf("%s ", new_command[i]);
     // }
     // printf("\n");
-
-    // store enough for commands plus 2 for input and output file locations
 
     return new_command;
 
