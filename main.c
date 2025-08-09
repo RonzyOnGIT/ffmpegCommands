@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
-#define MAX_DICT_LEN 150
+#define MAX_DIR_LEN 150
 
 int change_audio_to_japanese(DIR *, char *);
 
@@ -27,19 +27,19 @@ int main(void) {
     // to be able to dynamically make an array of strings, have to allocate on the heap
 
     // first get the name of the directory to get access to all files to be able to apply changes to all files
-    char dictName[MAX_DICT_LEN];
+    char dirName[MAX_DIR_LEN];
     char prefix[7] = "../../";
         
     printf("enter folder name: \n");
-    scanf("%[^\n]", dictName);
+    scanf("%[^\n]", dirName);
 
-    int totalLen = strlen(dictName) + strlen(prefix) + 1;
+    int totalLen = strlen(dirName) + strlen(prefix) + 1;
 
     // the sizeof(char) can be ommitted since by default malloc allocates in bytes so redundant
     char *finalPath = malloc(totalLen);
 
     strcpy(finalPath, prefix);
-    strcat(finalPath, dictName);
+    strcat(finalPath, dirName);
 
     printf("final path: %s\n", finalPath);
 
@@ -65,11 +65,12 @@ int main(void) {
         scanf("%d", &response);
 
         if (response == 1) {
-            // change audio to jpn
+            // reset directory pointer to point back to beginning if not already
+            rewinddir(dirp);
             int res = change_audio_to_japanese(dirp, finalPath);
         } else if (response == 2) {
+            rewinddir(dirp);
             int res = amplify_audio(dirp, finalPath);
-            // make audio louder
         } else if (response == 0) {
             printf("exiting application\n");
             free(finalPath);
@@ -314,6 +315,7 @@ int amplify_audio(DIR *dir, char *prefixPath) {
         int len = strlen(original_file_name);
         char *file_extension = original_file_name + len - 3;
 
+        // check to see what exension it is to rename it appropriately
         if (strcmp(file_extension, "mkv") == 0) {
             strcat(destination, "outputfile.mkv");
         } else if (strcmp(file_extension, "mp4") == 0) {
