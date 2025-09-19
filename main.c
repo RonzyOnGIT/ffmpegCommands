@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
-#define MAX_DIR_LEN 150
+#define MAX_DIR_LEN 256
 
 int change_audio_to_japanese(DIR *, char *);
 
@@ -116,6 +116,11 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
             continue;
         }
 
+        // ignore subs directory
+        if (strcmp(entry->d_name, "subs") == 0) {
+            continue;
+        }
+
         char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
         strcpy(destination, prefixPath);
         strcat(destination, "/");
@@ -215,15 +220,17 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
             printf("\n");
 
-            pid_t pid = fork();
+            pid_t pid = fork(); // create a child process
 
+            // check if process we're on is the child process 
             if (pid == 0) {
-                execvp("ffmpeg", mm);
+                execvp("ffmpeg", mm); // executes the ffmpeg command
                 perror("execvp failed");
             } else if (pid > 0) {
-
+                // current process is parent
                 int status;
                 waitpid(pid, &status, 0);
+                
                 if (WIFEXITED(status)) {
                     int exit_code = WEXITSTATUS(status);
                     if (exit_code == 0) {
@@ -300,6 +307,12 @@ int amplify_audio(DIR *dir, char *prefixPath) {
         if (strcmp(entry->d_name, "subs") == 0 || strcmp(entry->d_name, "Subs") == 0 || strcmp(entry->d_name, "SUBS") == 0) {
             continue;
         }
+
+        // skip subs folder
+        if (strcmp(entry->d_name, "subs") == 0) {
+            continue;
+        }
+
 
         //                                                      plus 2 for '/' and '\0'
         char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
