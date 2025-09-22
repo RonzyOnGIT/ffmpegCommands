@@ -18,9 +18,13 @@ void destroyFfprobeArgs(char **);
 // returns an array of strings from one single string, command with the input file name and output filename
 char ** construct_ffmpeg_command(char[], char *, char *);
 
+// returns -1 if failed, returns 0 otherwise
+int perform_command(char *, char **);
+
 int get_word_count(char *);
 
-
+// BUGS: 
+// When u type in a decimal or something, it starts going in an infinite loop or something, so reset values or something
 
 int main(void) {
 
@@ -50,11 +54,7 @@ int main(void) {
         return 1;
     }
 
-    // entry in directory
-    // struct dirent *entry;
-
     int response = -1;
-
 
     while (response != 0) {
 
@@ -313,7 +313,6 @@ int amplify_audio(DIR *dir, char *prefixPath) {
             continue;
         }
 
-
         //                                                      plus 2 for '/' and '\0'
         char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
         strcpy(destination, prefixPath);
@@ -348,49 +347,28 @@ int amplify_audio(DIR *dir, char *prefixPath) {
             printf("%s ", amp_command[i]);
         }
 
-        pid_t pid = fork();
+        int res = perform_command("ffmpeg", amp_command);
 
-        if (pid == 0) {
-            execvp("ffmpeg", amp_command);
-            perror("execvp failed");
-        } else if (pid > 0) {
+        if (res == 1) {
 
-            int status;
+            printf("successfully amplified audio!\n");
 
-            waitpid(pid, &status, 0);
+            // delete the old video file
+            int del_res = remove(original_file_name);
 
-            if (WIFEXITED(status)) {
-                int exit_code = WEXITSTATUS(status);
-                if (exit_code == 0) {
-                    printf("successfully amplified audio!\n");
-                    // delete old english default clip and rename output to original
+            if (del_res != 0) {
+                printf("failed to delete file %s\n", original_file_name);
+            }
 
-                    int del_res = remove(original_file_name);
-
-                    if (del_res != 0) {
-                        printf("failed to delete file\n");
-                    }
-
-                    int fileRenameResult = rename(destination, original_file_name);
-
-                    // printf("original_file_name: %s\n", original_file_name);
-                    // printf("destination: %s\n", destination);
-                    if (fileRenameResult < 0) {
-                        printf("file rename failed\n");
-                        return -1;
-                    }
-
-                } else {
-                    printf("some error happened\n");
-                    return -1;
-                }
-                printf("Child exited with code %d\n", WEXITSTATUS(status));
-            } else {
-                printf("Child terminated abnormally\n");
+            int fileRenameResult = rename(destination, original_file_name);
+            
+            if (fileRenameResult < 0) {
+                printf("file rename failed\n");
                 return -1;
             }
+
         } else {
-            perror("fork failed\n");
+            return -1;
         }
 
         for (int i = 0; i < commandCount; i++) {
@@ -461,6 +439,58 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
     // printf("\n");
 
     return new_command;
+
+}
+
+int perform_command(char *command, char **command_args) {
+
+    if (command_args == NULL) {
+        printf("invalid command args\n");
+        return -1;
+    }
+
+    // create child process
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        // child process
+
+        // perform command
+        int res = execvp(command, command_args);
+
+        if (res < 0) {
+            perror("failed to exec");
+            return -1;
+        }
+
+        _exit(1);
+
+    } else if (pid > 0) {
+        // parent process
+
+        int status;
+
+        waitpid(pid, &status, 0);
+
+        if (WIFEXITED(status)) {
+
+            // child process exitted succesfully
+            if (WEXITSTATUS(status) == 0) {
+                return 1;
+            } else {
+                printf("something went wrong with child process\n");
+                return -1;
+            }
+
+        } else {
+            printf("Child terminated abnormally\n");
+            return -1;
+        }
+
+    } else {
+        perror("fork failed");
+        return -1;
+    }
 
 }
 
