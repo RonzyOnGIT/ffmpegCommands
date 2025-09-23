@@ -460,10 +460,8 @@ int perform_command(char *command, char **command_args) {
 
         if (res < 0) {
             perror("failed to exec");
-            return -1;
+            _exit(1);
         }
-
-        _exit(1);
 
     } else if (pid > 0) {
         // parent process
