@@ -28,8 +28,6 @@ int get_word_count(char *);
 
 int main(void) {
 
-    // to be able to dynamically make an array of strings, have to allocate on the heap
-
     // first get the name of the directory to get access to all files to be able to apply changes to all files
     char dirName[MAX_DIR_LEN];
     char prefix[7] = "../../";
@@ -211,56 +209,56 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
             printf("%s IS NOT japanese by default\n", original_file_name);
 
             char command[200] = "ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ";
-            char **mm = construct_ffmpeg_command(command, original_file_name, destination);
+            char **ffmpeg_command = construct_ffmpeg_command(command, original_file_name, destination);
             int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
 
             for (int i = 0; i < commandCount; i++) {
-                printf("%s ", mm[i]);
+                printf("%s ", ffmpeg_command[i]);
             }
 
             printf("\n");
 
-            pid_t pid = fork(); // create a child process
+            int res = perform_command("ffmpeg", ffmpeg_command);
 
-            // check if process we're on is the child process 
-            if (pid == 0) {
-                execvp("ffmpeg", mm); // executes the ffmpeg command
-                perror("execvp failed");
-            } else if (pid > 0) {
-                // current process is parent
-                int status;
-                waitpid(pid, &status, 0);
-                
-                if (WIFEXITED(status)) {
-                    int exit_code = WEXITSTATUS(status);
-                    if (exit_code == 0) {
-                        printf("successfully changed to japanese default!\n");
-                        // delete old english default clip and rename output to original
+            if (res == 1) {
 
-                        int del_res = remove(original_file_name);
+                printf("Successfully changed to japanese track!\n");
 
-                        if (del_res != 0) {
-                            printf("failed to delete file\n");
-                        }
+                // audio changed, now delete the original file and rename the new file with original name
+                int del_res = remove(original_file_name);
+                if (del_res < 0) {
 
-                        fileRenameResult = rename(destination, original_file_name);
+                    printf("failed to delete file\n");
 
-                    } else {
-                        printf("some error happened\n");
+                    for (int i = 0; i < commandCount; i++) {
+                        free(ffmpeg_command[i]);
                     }
-                    printf("Child exited with code %d\n", WEXITSTATUS(status));
-                } else {
-                    printf("Child terminated abnormally\n");
+                
+                    free(ffmpeg_command);
+                    return -1;
+                }
+
+                int file_rename_res = rename(destination, original_file_name);
+
+                if (file_rename_res < 0) {
+
+                    for (int i = 0; i < commandCount; i++) {
+                        free(ffmpeg_command[i]);
+                    }
+                
+                    free(ffmpeg_command);
+                    perror("rename");
+                    return -1;
                 }
             } else {
-                perror("fork failed\n");
+                return -1;
             }
 
             for (int i = 0; i < commandCount; i++) {
-                free(mm[i]);
+                free(ffmpeg_command[i]);
             }
 
-            free(mm);
+            free(ffmpeg_command);
 
             if (fileRenameResult == -1) {
                 printf("failed to rename file\n");
@@ -356,7 +354,7 @@ int amplify_audio(DIR *dir, char *prefixPath) {
             // delete the old video file
             int del_res = remove(original_file_name);
 
-            if (del_res != 0) {
+            if (del_res < 0) {
                 printf("failed to delete file %s\n", original_file_name);
             }
 
@@ -431,7 +429,6 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
     new_command[fullCommandWordCount - 2] = malloc(strlen(output_file) + 1);
     strcpy(new_command[fullCommandWordCount - 2], output_file);
     new_command[fullCommandWordCount - 1] = NULL;
-
 
     // for (int i = 0; i < fullCommandWordCount; i++) {
     //     printf("%s ", new_command[i]);
