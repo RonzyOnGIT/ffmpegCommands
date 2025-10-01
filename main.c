@@ -152,7 +152,7 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         char *fileExtension = original_file_name + len - 3;
 
         FILE *fP = popen(probe_args, "r");
-        char buffer[1000];
+        char buffer[1000]; // buffer for each file
 
 
         if (fP == NULL) {
@@ -164,12 +164,15 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         }
 
         int index_is_one = false;
+        int japanese_stream_index = -1; // for some files, they are not tagged the same, so manually keep track of japanese audio track
+        int curr_idx = -1;
 
         while (fgets(buffer, sizeof(buffer), fP) != NULL) {
 
             // printf("%s\n", buffer);
 
             buffer[strcspn(buffer, "\n")] = 0; // Remove the newline, if present
+
             if (strcmp(buffer, "index=1") == 0) {
                 index_is_one = true;
             }
