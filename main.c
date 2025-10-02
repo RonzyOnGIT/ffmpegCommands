@@ -7,7 +7,8 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
-#define MAX_DIR_LEN 256
+#define MAX_DIR_LEN 521
+#define MAX_COMMAND_LEN 1024
 
 int change_audio_to_japanese(DIR *, char *);
 
@@ -164,30 +165,32 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         }
 
         int index_is_one = false;
-        int japanese_stream_index = -1; // for some files, they are not tagged the same, so manually keep track of japanese audio track
-        int curr_idx = -1;
+        int japanese_audio_track_idx = 2; // which audio track index is the japanese one, by default its track 2 (zero-index)
+        int curr_audio_track_idx = 1;
 
+        // loop through each line of the ffprobe output, and see if japanese track is not in first track
+        // This assumes that there is a japanese track in the first place, by looking for japanese tag and returning that idx, otherwise defaults to track 1 being japanese
         while (fgets(buffer, sizeof(buffer), fP) != NULL) {
 
             // printf("%s\n", buffer);
 
             buffer[strcspn(buffer, "\n")] = 0; // Remove the newline, if present
 
-            if (strcmp(buffer, "index=1") == 0) {
-                index_is_one = true;
+            if (strncmp(buffer, "index=", 6) == 0) {
+                // Example -> convert "index=2" → 2 by skipping first 6 bytes
+                curr_audio_track_idx = atoi(buffer + 6);  
             }
 
-            if (strcmp(buffer, "index=2") == 0) {
-                index_is_one = false;
-            }
+            // found a tag for the japaense track, now check to make sure its not already default
+            if (strcmp(buffer, "TAG:language=jpn") == 0) {
+                if (curr_audio_track_idx == 1) {
+                    printf("------defeault audio track is already Japanese------\n");
+                    is_default_jpn = true;
+                    break;
+                }
 
-            if ((strcmp(buffer, "TAG:language=jpn") == 0) && index_is_one) {
-                // this means default language is already japanese, continue
-                printf("audio is already in japanese default\n");
-                is_default_jpn = true;
-                break;
+                japanese_audio_track_idx = curr_audio_track_idx;
             }
-
         }
         pclose(fP);
 
@@ -211,7 +214,9 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
             printf("%s IS NOT japanese by default\n", original_file_name);
 
-            char command[200] = "ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ";
+            char command[MAX_COMMAND_LEN];
+            int zero_idx_track = japanese_audio_track_idx - 1;
+            snprintf(command, sizeof(command), "ffmpeg -i input.mkv -map 0:v:0 -map 0:a:%d -map -0:s -c copy -disposition:a:0 default output.mkv", zero_idx_track);
             char **ffmpeg_command = construct_ffmpeg_command(command, original_file_name, destination);
             int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
 
@@ -337,7 +342,7 @@ int amplify_audio(DIR *dir, char *prefixPath) {
             strcat(destination, "outputfile.mov");
         }
 
-        char command[200] = "ffmpeg -i -filter:a volume=1.5 -c:v copy ";
+        char command[MAX_COMMAND_LEN] = "ffmpeg -i -filter:a volume=1.5 -c:v copy ";
 
         // this is the acutal command thats gonna get executed
         char **amp_command = construct_ffmpeg_command(command, original_file_name, destination);
