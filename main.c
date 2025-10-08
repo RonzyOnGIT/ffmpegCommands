@@ -168,6 +168,8 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         int japanese_audio_track_idx = 2; // which audio track index is the japanese one, by default its track 2 (zero-index)
         int curr_audio_track_idx = 1;
 
+        // need to keep track of how many total tracks there are cause in case that theres only one track it fails
+
         // loop through each line of the ffprobe output, and see if japanese track is not in first track
         // This assumes that there is a japanese track in the first place, by looking for japanese tag and returning that idx, otherwise defaults to track 1 being japanese
         while (fgets(buffer, sizeof(buffer), fP) != NULL) {
@@ -216,9 +218,13 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 
             char command[MAX_COMMAND_LEN];
             int zero_idx_track = japanese_audio_track_idx - 1;
-            snprintf(command, sizeof(command), "ffmpeg -i input.mkv -map 0:v:0 -map 0:a:%d -map -0:s -c copy -disposition:a:0 default output.mkv", zero_idx_track);
+            snprintf(command, sizeof(command), "ffmpeg -i -map 0:v:0 -map 0:a:%d -map -0:s -c copy -disposition:a:0 default output.mkv", zero_idx_track);
             char **ffmpeg_command = construct_ffmpeg_command(command, original_file_name, destination);
-            int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
+
+            // int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
+
+            //                                                     Assumes only up to 9 tracks so 1 byte
+            int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:1 -map -0:s -c copy -disposition:a:0 default ") + 2;
 
             for (int i = 0; i < commandCount; i++) {
                 printf("%s ", ffmpeg_command[i]);
