@@ -6,9 +6,13 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 #define MAX_DIR_LEN 521
 #define MAX_COMMAND_LEN 1024
+#define MAX_WORKERS 3
+
+// #define DEBUG 1
 
 int change_audio_to_japanese(DIR *, char *);
 
@@ -24,8 +28,65 @@ int perform_command(char *, char **);
 
 int get_word_count(char *);
 
+
+typedef struct files_queue {
+    char **files; // array of all files
+    char *prefix_path; // files prepended with number for unique rename
+    size_t size; // current size of queue
+    size_t head; // index of head to process
+    size_t capacity; // max size
+} queue;
+
+
+
+/**
+ * @brief initializes job queue.
+ *
+ * This function takes the size of files to process and initializes . 
+ *
+ * @param file_count amount of files to process (integer).
+ * @param prefix_path store the prefix (../../dir) path to rename (char *)
+ * @return files_queue 
+ */
+struct files_queue * initialize_queue(int file_count, char *prefix_path);
+
+
+void destroy_queue(struct files_queue *q);
+
+
+/**
+ * @brief adds job to queue
+ *
+ * add to the queue a new file path appending it either to the tail or to the head
+ *
+ * @param files_queue queue to add job the new job to (queue *)
+ * @param file_path file path of the new job (string).
+ * @param prefix_path prefix_path prepended to file_path "../../ "(string).
+ * @return -1 on fail and 0 for success
+ */
+int add_job(queue *files_queue, char *file_path, char *prefix_path);
+
+/**
+ * @brief routine to process a file
+ *
+ * gets next file to process from queue and performs amplification command
+ *
+ * @param files_queue queue of all files to be able to pick up file to process
+ * @return -1 on fail or NULL for success
+ */
+void * worker_thread(void *files_queue);
+
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t file_cond = PTHREAD_COND_INITIALIZER;
+
 // BUGS: 
 // When u type in a decimal or something, it starts going in an infinite loop or something, so reset values or something
+
+// To Do:
+// right now program only supports concurrency for amplification since that takes longer than switching audio track
+// so create two thread routines one for amplification and one for audio track to support concunrrency for audio track as well
+
 
 int main(void) {
 
@@ -44,7 +105,7 @@ int main(void) {
     strcpy(finalPath, prefix);
     strcat(finalPath, dirName);
 
-    printf("final path: %s\n", finalPath);
+    printf("opening: %s\n\n", finalPath);
 
     DIR *dirp = opendir(finalPath);
 
@@ -296,6 +357,13 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 int amplify_audio(DIR *dir, char *prefixPath) {
     // command -> ffmpeg -i input.mp4 -filter:a "volume=1.5" -c:v copy output.mp4
 
+    // prefixPath is '../../' where by default it starts looking
+    pthread_t workers_tid[MAX_WORKERS];
+
+    #ifdef DEBUG
+    printf("prefix path: %s\n", prefixPath);
+    #endif
+
     if (dir == NULL) {
         perror("opendir");
         return - 1;
@@ -309,100 +377,94 @@ int amplify_audio(DIR *dir, char *prefixPath) {
 
     struct dirent *entry; // this is one file from the directory
 
-    while ((entry = readdir(dir)) != NULL) {
+    int file_count = 0;
 
+    // first get count of files to process to allocate on heap
+    while ((entry = readdir(dir)) != NULL) {
         // Skip "." and ".." entries
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
+        // ignore subs folder
         if (strcmp(entry->d_name, "subs") == 0 || strcmp(entry->d_name, "Subs") == 0 || strcmp(entry->d_name, "SUBS") == 0) {
             continue;
         }
 
-        // skip subs folder
-        if (strcmp(entry->d_name, "subs") == 0) {
+        file_count++;
+
+        printf("\n");
+    }
+
+    // start pointer to directory at start
+    rewinddir(dir);
+
+    struct files_queue *file_q = initialize_queue(file_count, prefixPath);
+
+    if (file_q == NULL) {
+        return -1;
+    }
+
+    // loop back now filling up job queue
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip "." and ".." entries
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
-        //                                                      plus 2 for '/' and '\0'
-        char *destination = malloc(strlen("outputfile.mkv") + strlen(prefixPath) + 2);
-        strcpy(destination, prefixPath);
-        strcat(destination, "/");
-
-
-        char *original_file_name = malloc(strlen(entry->d_name) + strlen(prefixPath) + 2);
-        strcpy(original_file_name, prefixPath);
-        strcat(original_file_name, "/");
-        strcat(original_file_name, entry->d_name);
-
-        int len = strlen(original_file_name);
-        char *file_extension = original_file_name + len - 3;
-
-        // check to see what exension it is to rename it appropriately
-        if (strcmp(file_extension, "mkv") == 0) {
-            strcat(destination, "outputfile.mkv");
-        } else if (strcmp(file_extension, "mp4") == 0) {
-            strcat(destination, "outputfile.mp4");
-        } else if (strcmp(file_extension, "mov") == 0) {
-            strcat(destination, "outputfile.mov");
+        // ignore subs folder
+        if (strcmp(entry->d_name, "subs") == 0 || strcmp(entry->d_name, "Subs") == 0 || strcmp(entry->d_name, "SUBS") == 0) {
+            continue;
         }
 
-        char command[MAX_COMMAND_LEN] = "ffmpeg -i -filter:a volume=1.5 -c:v copy ";
+        #ifdef DEBUG
+        printf("adding file: \"%s\" to job queue\n", entry->d_name);
+        #endif
 
-        // this is the acutal command thats gonna get executed
-        char **amp_command = construct_ffmpeg_command(command, original_file_name, destination);
-        
-        int commandCount = get_word_count("ffmpeg -i -filter:a volume=1.5 -c:v copy ") + 2;
-        
-        for (int i = 0; i < commandCount; i++) {
-            printf("%s ", amp_command[i]);
-        }
-
-        int res = perform_command("ffmpeg", amp_command);
-
-        if (res == 1) {
-
-            printf("successfully amplified audio!\n");
-
-            // delete the old video file
-            int del_res = remove(original_file_name);
-
-            if (del_res < 0) {
-                printf("failed to delete file %s\n", original_file_name);
-            }
-
-            int fileRenameResult = rename(destination, original_file_name);
-            
-            if (fileRenameResult < 0) {
-                printf("file rename failed\n");
-                return -1;
-            }
-
-        } else {
+        // push file to job queue
+        if (add_job(file_q, entry->d_name, prefixPath) != 0) {
             return -1;
         }
-
-        for (int i = 0; i < commandCount; i++) {
-            free(amp_command[i]);
-        }
-
-        free(amp_command);
-
-        free(destination);
-        free(original_file_name);
-
-        printf("\n");
-
     }
 
-    return 1;
+    int i;
 
+    int new_thread_res = 0;
+
+    void *status;
+
+    #ifdef DEBUG
+    for (i = 0; i < file_count; i++) {
+        printf("job: %s\n", file_q->files[i]);
+    }
+    #endif
+
+    // create worker threads to take on jobs
+    for (i = 0; i < MAX_WORKERS; i++) {
+        // work on creating function for thread when its created
+        new_thread_res = pthread_create(&workers_tid[i], NULL, worker_thread, (void *)file_q);
+
+        if (new_thread_res != 0) {
+            perror("pthread_create");
+        }
+    }
+
+    for (i = 0; i < MAX_WORKERS; i++) {
+        pthread_join(workers_tid[i], &status);
+    }
+
+    if (status != NULL) {
+        printf("thread fail\n");
+        return -1;
+    }
+
+    destroy_queue(file_q);
+
+    return 1;
 }
 
 
 void destroyFfprobeArgs(char **args) {
-
 
     for (int i = 0; i < 9; i++) {
         free(args[i]);
@@ -514,6 +576,161 @@ int get_word_count(char *word) {
     }
 
     return count;
+}
+
+struct files_queue *initialize_queue(int file_count, char *prefix_path) {
+    struct files_queue *file_q = malloc(sizeof(struct files_queue));
+
+    if (file_q == NULL) {
+        perror("malloc");
+        return NULL;
+    }
+
+    file_q->files = malloc(sizeof(char *) * file_count);
+
+    if (file_q->files == NULL) {
+        perror("malloc");
+        return NULL;
+    }
+
+    file_q->size = 0;
+    file_q->head= 0;
+    file_q->capacity = file_count;
+    file_q->prefix_path = malloc(strlen(prefix_path) + 1);
+    strcpy(file_q->prefix_path, prefix_path);
+
+    return file_q;
+}
+
+void destroy_queue(struct files_queue *q) {
+    if (q == NULL) {
+        return;
+    }
+
+    size_t file_count = q->capacity;
+    for (size_t i = 0; i < file_count; i++) {
+        free(q->files[i]);
+    }
+
+    free(q->files);
+    free(q->prefix_path);
+    free(q);
+}
+
+int add_job(queue *files_queue, char *file_path, char *prefix_path) {
+    // first need to check if queue is empty, to just append at the head and yep
+
+    if (files_queue == NULL) {
+        printf("null queue\n");
+        return -1;
+    }
+
+    if (files_queue->size == 0) {
+        //                                                 + 2 for null terminating and '/'
+        files_queue->files[0] = malloc(strlen(file_path) + strlen(prefix_path) + 2);
+        strcpy(files_queue->files[0], prefix_path);
+        strcat(files_queue->files[0], "/");
+        strcat(files_queue->files[0], file_path);
+        files_queue->size++;
+    } else {
+        // case for when queue is not empty
+        size_t tail = files_queue->size;
+        files_queue->files[tail] = malloc(strlen(file_path) + strlen(prefix_path) + 2);
+        strcpy(files_queue->files[tail], prefix_path);
+        strcat(files_queue->files[tail], "/");
+        strcat(files_queue->files[tail], file_path);
+        files_queue->size++;    
+    }
+
+    return 0;
+}
+
+void * worker_thread(void *files_queue) {
+
+    queue *files_q = (queue *)files_queue;
+
+    while (1) {
+
+        char *original_name = NULL;
+        char *destination = NULL;
+        
+        pthread_mutex_lock(&mutex);
+        {
+            while (files_q->size < 1) {
+                // finished processing all files or last files currently being processed, exit
+                pthread_mutex_unlock(&mutex);
+                pthread_exit(NULL);
+            }
+
+            // ../../temp/[Judas] Yofukashi - S02E06.mkv
+            // get idx of next file to process
+            size_t idx = files_q->head;
+
+            // save original name so thread can rename it back after finished processing
+            original_name = malloc(strlen(files_q->files[idx]) + 1);
+            strcpy(original_name, files_q->files[idx]);
+
+            size_t allocated_size = strlen(files_q->files[idx]) + 6; // + 5 bytes for file number + '\0'
+
+            destination = malloc(allocated_size);
+
+            char *filename_part = &files_q->files[idx][strlen(files_q->prefix_path) + 1];
+
+            snprintf(destination, allocated_size, "%s/%zu%s", files_q->prefix_path, idx, filename_part);
+
+            printf("output: %s\n", destination);
+
+            files_q->head++;
+            files_q->size--;
+        }
+
+        pthread_mutex_unlock(&mutex);
+
+        // perform ffmpeg command
+        char command[MAX_COMMAND_LEN] = "ffmpeg -i -filter:a volume=1.5 -c:v copy ";
+
+        // this is the acutal command thats gonna get executed
+        char **amp_command = construct_ffmpeg_command(command, original_name, destination);
+
+        //                                                      plus 2 for the input and output arguments
+        int commandCount = get_word_count("ffmpeg -i -filter:a volume=1.5 -c:v copy ") + 2;
+        
+        for (int i = 0; i < commandCount; i++) {
+            printf("%s ", amp_command[i]);
+        }
+
+        int res = perform_command("ffmpeg", amp_command);
+
+        if (res == 1) {
+
+            printf("successfully amplified audio!\n");
+
+            // delete the old video file
+            int del_res = remove(original_name);
+
+            if (del_res < 0) {
+                printf("failed to delete file %s\n", original_name);
+            }
+
+            int fileRenameResult = rename(destination, original_name);
+            
+            if (fileRenameResult < 0) {
+                printf("file rename failed\n");
+                return (void *)-1;
+            }
+
+        } else {
+            return (void *)-1;
+        }
+
+        for (int i = 0; i < commandCount; i++) {
+            free(amp_command[i]);
+        } 
+        
+        free(amp_command);
+        free(original_name);
+        free(destination);
+    }
 }
 
 
