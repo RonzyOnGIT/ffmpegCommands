@@ -35,6 +35,7 @@ typedef struct files_queue {
     size_t size; // current size of queue
     size_t head; // index of head to process
     size_t capacity; // max size
+    float amplify_value;
 } queue;
 
 
@@ -46,9 +47,10 @@ typedef struct files_queue {
  *
  * @param file_count amount of files to process (integer).
  * @param prefix_path store the prefix (../../dir) path to rename (char *)
+ * @param amplify_value keep track of amplify value so worker threads know how much, -1 to ignore (float)
  * @return files_queue 
  */
-struct files_queue * initialize_queue(int file_count, char *prefix_path);
+struct files_queue * initialize_queue(int file_count, char *prefix_path, float amplify_value);
 
 
 void destroy_queue(struct files_queue *q);
@@ -399,7 +401,7 @@ int amplify_audio(DIR *dir, char *prefixPath) {
     // start pointer to directory at start
     rewinddir(dir);
 
-    struct files_queue *file_q = initialize_queue(file_count, prefixPath);
+    struct files_queue *file_q = initialize_queue(file_count, prefixPath, amplify_value);
 
     if (file_q == NULL) {
         return -1;
@@ -441,7 +443,6 @@ int amplify_audio(DIR *dir, char *prefixPath) {
 
     // create worker threads to take on jobs
     for (i = 0; i < MAX_WORKERS; i++) {
-        // work on creating function for thread when its created
         new_thread_res = pthread_create(&workers_tid[i], NULL, worker_thread, (void *)file_q);
 
         if (new_thread_res != 0) {
@@ -492,6 +493,7 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
         if (tokenCount == 2) {
             tokenCount++;
         }
+
         int len = strlen(tok);
         new_command[tokenCount] = malloc(len + 1);
         strcpy(new_command[tokenCount], tok);
@@ -578,7 +580,7 @@ int get_word_count(char *word) {
     return count;
 }
 
-struct files_queue *initialize_queue(int file_count, char *prefix_path) {
+struct files_queue *initialize_queue(int file_count, char *prefix_path, float amplify_value) {
     struct files_queue *file_q = malloc(sizeof(struct files_queue));
 
     if (file_q == NULL) {
@@ -597,6 +599,7 @@ struct files_queue *initialize_queue(int file_count, char *prefix_path) {
     file_q->head= 0;
     file_q->capacity = file_count;
     file_q->prefix_path = malloc(strlen(prefix_path) + 1);
+    file_q->amplify_value = amplify_value;
     strcpy(file_q->prefix_path, prefix_path);
 
     return file_q;
@@ -687,7 +690,8 @@ void * worker_thread(void *files_queue) {
         pthread_mutex_unlock(&mutex);
 
         // perform ffmpeg command
-        char command[MAX_COMMAND_LEN] = "ffmpeg -i -filter:a volume=1.5 -c:v copy ";
+        char *command = malloc(MAX_COMMAND_LEN);
+        snprintf(command, MAX_COMMAND_LEN, "ffmpeg -i -filter:a volume=%.2f -c:v copy ", files_q->amplify_value);
 
         // this is the acutal command thats gonna get executed
         char **amp_command = construct_ffmpeg_command(command, original_name, destination);
