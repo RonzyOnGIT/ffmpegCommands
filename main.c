@@ -357,7 +357,8 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 }
 
 int amplify_audio(DIR *dir, char *prefixPath) {
-    // command -> ffmpeg -i input.mp4 -filter:a "volume=1.5" -c:v copy output.mp4
+    //  previous comman that did not always preserve default audio order ffmpeg -i input.mp4 -filter:a "volume=1.5" -c:v copy output.mp4
+    //  command -> ffmpeg -i input.mp4 -map 0 -filter:a "volume=1.5" -c:v copy output.mp4
 
     // prefixPath is '../../' where by default it starts looking
     pthread_t workers_tid[MAX_WORKERS];
@@ -691,7 +692,8 @@ void * worker_thread(void *files_queue) {
 
         // perform ffmpeg command
         char *command = malloc(MAX_COMMAND_LEN);
-        snprintf(command, MAX_COMMAND_LEN, "ffmpeg -i -filter:a volume=%.2f -c:v copy ", files_q->amplify_value);
+
+        snprintf(command, MAX_COMMAND_LEN, "ffmpeg -i -map 0 -filter:a volume=%.2f -c:v copy ", files_q->amplify_value);
 
         // this is the acutal command thats gonna get executed
         char **amp_command = construct_ffmpeg_command(command, original_name, destination);
@@ -734,7 +736,9 @@ void * worker_thread(void *files_queue) {
         free(amp_command);
         free(original_name);
         free(destination);
+
+        // this might break stuff
+        free(command);
     }
 }
-
 
