@@ -357,7 +357,6 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
 }
 
 int amplify_audio(DIR *dir, char *prefixPath) {
-    //  previous comman that did not always preserve default audio order ffmpeg -i input.mp4 -filter:a "volume=1.5" -c:v copy output.mp4
     //  command -> ffmpeg -i input.mp4 -map 0 -filter:a "volume=1.5" -c:v copy output.mp4
 
     // prefixPath is '../../' where by default it starts looking
@@ -479,12 +478,22 @@ void destroyFfprobeArgs(char **args) {
 // have to tokenize the char *command input to be able to get individual arguments
 // returns an array of strings from one single string, command, with the input file name
 char ** construct_ffmpeg_command(char command[], char *input_file_name, char *output_file) {
+
+    // should have 11 args ffmpeg -i input.mp4 -map 0 -filter:a "volume=1.5" -c:v copy output.mp4
     
     int count = get_word_count(command);
 
+    #ifdef DEBUG
+    printf("command count: %d\n", count + 3);
+    #endif
+
+    if (count < 1) {
+        return NULL;
+    }
+
     // plus 2 for input_file_name and output_file and plus extra one for NULL argument
     int fullCommandWordCount = count + 3;
-    char **new_command = malloc(fullCommandWordCount * sizeof(char *));
+    char **new_command = malloc(fullCommandWordCount * sizeof(char *));    
 
     char *tok = strtok(command, " ");
     int tokenCount = 0;
@@ -697,9 +706,13 @@ void * worker_thread(void *files_queue) {
 
         // this is the acutal command thats gonna get executed
         char **amp_command = construct_ffmpeg_command(command, original_name, destination);
+        //  command -> ffmpeg -i input.mp4 -map 0 -filter:a "volume=1.5" -c:v copy output.mp4
+
 
         //                                                      plus 2 for the input and output arguments
-        int commandCount = get_word_count("ffmpeg -i -filter:a volume=1.5 -c:v copy ") + 2;
+        int commandCount = get_word_count("ffmpeg -i -map 0 -filter:a volume=1.5 -c:v copy ") + 2;
+
+        free(command);
         
         for (int i = 0; i < commandCount; i++) {
             printf("%s ", amp_command[i]);
@@ -726,6 +739,15 @@ void * worker_thread(void *files_queue) {
             }
 
         } else {
+            free(original_name);
+            free(destination);
+
+            for (int i = 0; i < commandCount; i++) {
+                free(amp_command[i]);
+            } 
+
+            free(amp_command);
+
             return (void *)-1;
         }
 
@@ -736,9 +758,6 @@ void * worker_thread(void *files_queue) {
         free(amp_command);
         free(original_name);
         free(destination);
-
-        // this might break stuff
-        free(command);
     }
 }
 
