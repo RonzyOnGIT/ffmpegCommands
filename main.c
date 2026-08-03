@@ -230,6 +230,7 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         int index_is_one = false;
         int japanese_audio_track_idx = 2; // which audio track index is the japanese one, by default its track 2 (zero-index)
         int curr_audio_track_idx = 1;
+        int default_value = -1; // each track has a 'default' value. I think this is what determines default audio track. Default of 1 meaning it is default audio
 
         // need to keep track of how many total tracks there are cause in case that theres only one track it fails
 
@@ -246,8 +247,13 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
                 curr_audio_track_idx = atoi(buffer + 6);  
             }
 
+            
+            if (strncmp(buffer, "DISPOSITION:default=", 20) == 0) {
+                default_value = atoi(buffer + 20);
+            }
+
             // found a tag for the japaense track, now check to make sure its not already default
-            if (strcmp(buffer, "TAG:language=jpn") == 0) {
+            if (strcmp(buffer, "TAG:language=jpn") == 0 && default_value == 1) {
                 if (curr_audio_track_idx == 1) {
                     printf("------defeault audio track is already Japanese------\n");
                     is_default_jpn = true;
@@ -706,8 +712,6 @@ void * worker_thread(void *files_queue) {
 
         // this is the acutal command thats gonna get executed
         char **amp_command = construct_ffmpeg_command(command, original_name, destination);
-        //  command -> ffmpeg -i input.mp4 -map 0 -filter:a "volume=1.5" -c:v copy output.mp4
-
 
         //                                                      plus 2 for the input and output arguments
         int commandCount = get_word_count("ffmpeg -i -map 0 -filter:a volume=1.5 -c:v copy ") + 2;
