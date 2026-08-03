@@ -28,3 +28,21 @@ After succesfully opening video directory, the program then prompts for 3 choice
 
 
 
+
+### Docker stuff
+
+
+#### 1. Build image
+`docker build -t image_name .`
+
+
+### 2. Spin up container
+`docker run -it \
+    --name audio-dev \
+    -v "$(pwd)":/workspace \
+    -w /workspace \
+    audio_effects \`
+
+
+
+
