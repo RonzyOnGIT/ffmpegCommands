@@ -1,5 +1,6 @@
 #include "ffmpeg_ops.h"
 #include <sys/types.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -377,6 +378,16 @@ int perform_command(char *command, char **command_args) {
     if (pid == 0) {
         // child process
 
+        // detach stdin from the controlling terminal so ffmpeg can't put the tty
+        // into raw/no-echo mode (it does this to catch keypreses like 'q')
+        // otherwise, threads would share and fight over same terminal's stdin
+        int devnull = open("/dev/null", O_RDONLY);
+
+        if (devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            close(devnull);
+        }
+
         // perform command
         int res = execvp(command, command_args);
 
@@ -685,6 +696,15 @@ void * worker_thread(void *files_queue) {
 
             if (fileRenameResult < 0) {
                 printf("file rename failed\n");
+
+                for (int i = 0; i < commandCount; i++) {
+                    free(amp_command[i]);
+                }
+
+                free(amp_command);
+                free(original_name);
+                free(destination);
+
                 return (void *)-1;
             }
 
