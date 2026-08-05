@@ -17,7 +17,7 @@ Make sure the executable is in the right path relative to video directory, 2 lev
 
 
 ### Executing
-compile using `gcc main.c ffmpeg_ops.c -lpthread` to generate a.out executable.
+compile using `make` to generate a.out executable.
 When you execute it, it will prompt u for a directory to start performing ffmpeg commands, simply type in the directory name, do not type in the absolute path, the program assumes to look at `../../directory`
 
 ### Options
