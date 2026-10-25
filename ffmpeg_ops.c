@@ -666,6 +666,7 @@ void * worker_thread(void *files_queue) {
         char *command = malloc(MAX_COMMAND_LEN);
 
         snprintf(command, MAX_COMMAND_LEN, "ffmpeg -i -map 0 -filter:a volume=%.2f -c:v copy ", files_q->amplify_value);
+        // ffmpeg -i 'input.mkv' -map 0:v -map 0:a -c:v copy -c:a aac -filter:a 'volume=1.6' 'output.mkv' try this command next, it ignores subtitles (drops them) but hopefully will stop running into issues with some files
 
         // this is the acutal command thats gonna get executed
         char **amp_command = construct_ffmpeg_command(command, original_name, destination);
