@@ -143,7 +143,6 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
         int index_is_one = false;
         int japanese_audio_track_idx = -1; // which audio track index is the japanese one (zero-index). In the end, I will use this index to change this audio index to default of 1, hence reason for tracking index value
         int curr_audio_track_idx = -1;
-        int current_default_idx = -1; // the track that is the default stream
         int default_value = -1; // each track has a 'default' value. I think this is what determines default audio track. Default of 1 meaning it is default audio
 
         // need to keep track of how many total tracks there are cause in case that theres only one track it fails
@@ -169,10 +168,6 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
             
             if (strncmp(buffer, "DISPOSITION:default=", 20) == 0) {
                 default_value = atoi(buffer + 20);
-            }
-
-            if (default_value == 1) {
-                current_default_idx = curr_audio_track_idx;
             }
 
             // I'm missing one more thing
@@ -213,16 +208,15 @@ int change_audio_to_japanese(DIR *dir, char *prefixPath) {
             printf("%s IS NOT japanese by default\n", original_file_name);
 
             char command[MAX_COMMAND_LEN];
-            // snprintf(command, sizeof(command), "ffmpeg -i -map 0:v:0 -map 0:a:%d -map -0:s -c copy -disposition:a:0 default output.mkv", zero_idx_track);
-            snprintf(command, sizeof(command), "ffmpeg -i -map 0 -c copy -disposition:a:%d 0 -disposition:a:%d default output.mkv", current_default_idx, japanese_audio_track_idx);
+            // Keep only video/audio; drop subtitles and subtitle font attachments.
+            // Clear the default flag, then mark the Japanese track as default.
+            // Keep the trailing space: get_word_count() currently counts spaces.
+            snprintf(command, sizeof(command), "ffmpeg -i -map 0:v? -map 0:a? -sn -c copy -disposition:a -default -disposition:a:%d +default ", japanese_audio_track_idx);
 
-
+            // Count BEFORE construct_ffmpeg_command() tokenizes the string.
+            // Add two arguments for the input and output filenames.
+            int commandCount = get_word_count(command) + 2;
             char **ffmpeg_command = construct_ffmpeg_command(command, original_file_name, destination);
-                
-            // int commandCount = get_word_count("ffmpeg -i -map 0:v:0 -map 0:a:m:language:jpn -map -0:s -c copy -disposition:a:0 default ") + 2;
-
-            //                                                     Assumes only up to 9 tracks so 1 byte
-            int commandCount = get_word_count("ffmpeg -i -map 0 -c copy -disposition:a:0 0 -disposition:a:1 default ") + 2;
 
             for (int i = 0; i < commandCount; i++) {
                 printf("%s ", ffmpeg_command[i]);
@@ -338,7 +332,9 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
     int fullCommandWordCount = count + 3;
     char **new_command = malloc(fullCommandWordCount * sizeof(char *));
 
-    char *tok = strtok(command, " ");
+    // Each worker needs its own tokenizer state.
+    char *saveptr = NULL;
+    char *tok = strtok_r(command, " ", &saveptr);
     int tokenCount = 0;
 
     while (tok != NULL) {
@@ -350,7 +346,7 @@ char ** construct_ffmpeg_command(char command[], char *input_file_name, char *ou
         int len = strlen(tok);
         new_command[tokenCount] = malloc(len + 1);
         strcpy(new_command[tokenCount], tok);
-        tok = strtok(NULL, " ");
+        tok = strtok_r(NULL, " ", &saveptr);
         tokenCount++;
     }
 
@@ -665,14 +661,13 @@ void * worker_thread(void *files_queue) {
         // perform ffmpeg command
         char *command = malloc(MAX_COMMAND_LEN);
 
-        snprintf(command, MAX_COMMAND_LEN, "ffmpeg -i -map 0 -filter:a volume=%.2f -c:v copy ", files_q->amplify_value);
-        // ffmpeg -i 'input.mkv' -map 0:v -map 0:a -c:v copy -c:a aac -filter:a 'volume=1.6' 'output.mkv' try this command next, it ignores subtitles (drops them) but hopefully will stop running into issues with some files
+        // Keep all video/audio tracks, but no subtitles or font attachments.
+        // Keep the trailing space: get_word_count() currently counts spaces.
+        snprintf(command, MAX_COMMAND_LEN, "ffmpeg -i -map 0:v? -map 0:a? -sn -filter:a volume=%.2f -c:v copy ", files_q->amplify_value);
 
-        // this is the acutal command thats gonna get executed
+        // Count before tokenizing, including input/output filename arguments.
+        int commandCount = get_word_count(command) + 2;
         char **amp_command = construct_ffmpeg_command(command, original_name, destination);
-
-        //                                                      plus 2 for the input and output arguments
-        int commandCount = get_word_count("ffmpeg -i -map 0 -filter:a volume=1.5 -c:v copy ") + 2;
 
         free(command);
 
